@@ -64,6 +64,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Bin_1
       objectReference: {fileID: 0}
+    - target: {fileID: -927199367670048503, guid: 5976876db653ecf4f9acb6fa04b2433f, type: 3}
+      propertyPath: m_TagString
+      value: InteractableItems
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -100,7 +104,7 @@ CapsuleCollider:
   m_Enabled: 1
   serializedVersion: 2
   m_Radius: 0.15
-  m_Height: 0.6
+  m_Height: 0.55
   m_Direction: 1
   m_Center: {x: -0.0000026747584, y: 0.0000022798777, z: 0.000003361378}
 --- !u!54 &8940712767559073907
