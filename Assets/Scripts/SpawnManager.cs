@@ -1,11 +1,19 @@
+using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.XR.Interaction.Toolkit;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 public class SpawnManager : MonoBehaviour
 {
     [Header("Prefabs")]
     public GameObject binPrefab;
     public GameObject bedPrefab;
+
+    [Header("XR Spawn Input (Optional)")]
+    public bool enableXRActionInput = true;
+    public InputActionReference spawnBinAction;
+    public InputActionReference spawnBedAction;
 
     [Header("Spawn Origin")]
     public Transform spawnOrigin;   // Drag Right Controller here
@@ -22,6 +30,16 @@ public class SpawnManager : MonoBehaviour
     public float floorRayStartHeight = 3f;
     public float floorRayLength = 10f;
     public float surfaceOffset = 0.01f;
+    public bool preferStaticSurfaceForFloorSnap = true;
+    public bool ignoreInteractableItemsWhenSnapping = true;
+
+    [Header("Interaction Auto Setup")]
+    public bool autoConfigureSpawnedInteractables = true;
+    public bool forceMultipleSelectionForTwoHandScale = true;
+    public bool autoAddHighlightComponent = true;
+    public bool autoAddTwoHandScaleComponent = true;
+    public bool enableGazeInteractionOnSpawned = true;
+    public bool enableGazeSelectOnSpawned = true;
 
     [Header("Editor Test Keys")]
     public bool enableKeyboardTesting = true;
@@ -34,6 +52,46 @@ public class SpawnManager : MonoBehaviour
         {
             spawnOrigin = Camera.main.transform;
             Debug.LogWarning("SpawnManager: spawnOrigin was not assigned, so Camera.main is being used.");
+        }
+    }
+
+    private void OnEnable()
+    {
+        if (!enableXRActionInput)
+        {
+            return;
+        }
+
+        if (spawnBinAction == null || spawnBedAction == null)
+        {
+            Debug.LogWarning("SpawnManager: XR spawn action references are missing. Assign both SpawnBin and SpawnBed actions.");
+        }
+
+        if (spawnBinAction != null && spawnBinAction.action != null)
+        {
+            spawnBinAction.action.performed += OnSpawnBinAction;
+            spawnBinAction.action.Enable();
+        }
+
+        if (spawnBedAction != null && spawnBedAction.action != null)
+        {
+            spawnBedAction.action.performed += OnSpawnBedAction;
+            spawnBedAction.action.Enable();
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (spawnBinAction != null && spawnBinAction.action != null)
+        {
+            spawnBinAction.action.performed -= OnSpawnBinAction;
+            spawnBinAction.action.Disable();
+        }
+
+        if (spawnBedAction != null && spawnBedAction.action != null)
+        {
+            spawnBedAction.action.performed -= OnSpawnBedAction;
+            spawnBedAction.action.Disable();
         }
     }
 
@@ -64,6 +122,16 @@ public class SpawnManager : MonoBehaviour
     public void SpawnBed()
     {
         SpawnObject(bedPrefab);
+    }
+
+    private void OnSpawnBinAction(InputAction.CallbackContext context)
+    {
+        SpawnBin();
+    }
+
+    private void OnSpawnBedAction(InputAction.CallbackContext context)
+    {
+        SpawnBed();
     }
 
     private void SpawnObject(GameObject prefab)
@@ -103,6 +171,8 @@ public class SpawnManager : MonoBehaviour
 
         GameObject spawned = Instantiate(prefab, spawnPos, spawnRot);
 
+        ConfigureSpawnedInteractable(spawned);
+
         if (snapToFloor)
         {
             SnapSpawnedObjectToFloor(spawned, spawnPos);
@@ -116,27 +186,68 @@ public class SpawnManager : MonoBehaviour
         Vector3 rayStart = approxSpawnPos + Vector3.up * floorRayStartHeight;
         Ray ray = new Ray(rayStart, Vector3.down);
 
-        RaycastHit hit;
-        bool hitSomething;
-
+        RaycastHit[] hits;
         if (floorMask.value == 0)
         {
-            hitSomething = Physics.Raycast(ray, out hit, floorRayLength);
+            hits = Physics.RaycastAll(ray, floorRayLength, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
         }
         else
         {
-            hitSomething = Physics.Raycast(ray, out hit, floorRayLength, floorMask);
+            hits = Physics.RaycastAll(ray, floorRayLength, floorMask, QueryTriggerInteraction.Ignore);
         }
 
-        if (!hitSomething) return;
+        if (hits.Length == 0) return;
 
-        float halfHeight = GetObjectHalfHeight(obj);
+        Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+
+        bool foundValidSurface = false;
+        RaycastHit bestHit = default;
+
+        for (int i = 0; i < hits.Length; i++)
+        {
+            RaycastHit candidate = hits[i];
+
+            if (candidate.collider == null)
+            {
+                continue;
+            }
+
+            if (candidate.collider.transform.IsChildOf(obj.transform))
+            {
+                continue;
+            }
+
+            if (ignoreInteractableItemsWhenSnapping && candidate.collider.CompareTag("InteractableItems"))
+            {
+                continue;
+            }
+
+            if (preferStaticSurfaceForFloorSnap && candidate.rigidbody != null && candidate.rigidbody.gameObject != obj)
+            {
+                continue;
+            }
+
+            bestHit = candidate;
+            foundValidSurface = true;
+            break;
+        }
+
+        if (!foundValidSurface) return;
+
+        float bottomOffsetFromPivot = GetBottomOffsetFromPivot(obj);
         Vector3 pos = obj.transform.position;
-        pos.y = hit.point.y + halfHeight + surfaceOffset;
+        pos.y = bestHit.point.y + bottomOffsetFromPivot + surfaceOffset;
         obj.transform.position = pos;
+
+        Rigidbody rb = obj.GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+        }
     }
 
-    private float GetObjectHalfHeight(GameObject obj)
+    private float GetBottomOffsetFromPivot(GameObject obj)
     {
         Collider[] colliders = obj.GetComponentsInChildren<Collider>();
 
@@ -151,6 +262,48 @@ public class SpawnManager : MonoBehaviour
             bounds.Encapsulate(colliders[i].bounds);
         }
 
-        return bounds.extents.y;
+        // Use the actual world-space collider bottom relative to pivot.
+        // This supports colliders with non-zero centers (e.g., bed collider centered below pivot).
+        float bottomOffset = obj.transform.position.y - bounds.min.y;
+        return Mathf.Max(0.01f, bottomOffset);
+    }
+
+    private void ConfigureSpawnedInteractable(GameObject obj)
+    {
+        if (!autoConfigureSpawnedInteractables || obj == null)
+        {
+            return;
+        }
+
+        XRGrabInteractable grabInteractable = obj.GetComponent<XRGrabInteractable>();
+        if (grabInteractable == null)
+        {
+            grabInteractable = obj.AddComponent<XRGrabInteractable>();
+        }
+
+        if (forceMultipleSelectionForTwoHandScale)
+        {
+            grabInteractable.selectMode = InteractableSelectMode.Multiple;
+        }
+
+        grabInteractable.allowGazeInteraction = enableGazeInteractionOnSpawned;
+        grabInteractable.allowGazeSelect = enableGazeSelectOnSpawned;
+
+        if (autoAddHighlightComponent && obj.GetComponent<XRInteractableHighlighter>() == null)
+        {
+            obj.AddComponent<XRInteractableHighlighter>();
+        }
+
+        if (autoAddTwoHandScaleComponent && obj.GetComponent<XRTwoHandScaleInteractable>() == null)
+        {
+            obj.AddComponent<XRTwoHandScaleInteractable>();
+        }
+
+        Rigidbody rb = obj.GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
+        }
     }
 }

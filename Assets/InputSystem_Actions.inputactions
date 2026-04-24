@@ -1,4 +1,5 @@
 {
+    "version": 1,
     "name": "InputSystem_Actions",
     "maps": [
         {
@@ -986,6 +987,74 @@
                     "processors": "",
                     "groups": "XR",
                     "action": "TrackedDeviceOrientation",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                }
+            ]
+        },
+        {
+            "name": "XRSpawn",
+            "id": "35736893-a9d0-4f40-96ab-cf4468e89e7d",
+            "actions": [
+                {
+                    "name": "New action1",
+                    "type": "Button",
+                    "id": "c346aa8f-a9ad-4fdb-b468-c879c5b517b2",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "SpawnBin",
+                    "type": "Button",
+                    "id": "ec7dd30b-ac47-460c-a371-3aafa4bdbbc8",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "SpawnBed",
+                    "type": "Button",
+                    "id": "6d8009cf-7d67-45ac-a3a4-bb039ee34867",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                }
+            ],
+            "bindings": [
+                {
+                    "name": "",
+                    "id": "1f680892-6c3b-4316-93f0-a22ea04d85e2",
+                    "path": "",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "New action1",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "293bb7a3-de45-49cb-8330-b6e035b26b13",
+                    "path": "<XRController>{RightHand}/{TriggerButton}",
+                    "interactions": "Hold",
+                    "processors": "",
+                    "groups": "",
+                    "action": "SpawnBin",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "dad3103a-eacf-48e9-9a15-f415c5cff2be",
+                    "path": "<XRController>{LeftHand}/{TriggerButton}",
+                    "interactions": "Hold",
+                    "processors": "",
+                    "groups": "",
+                    "action": "SpawnBed",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }
