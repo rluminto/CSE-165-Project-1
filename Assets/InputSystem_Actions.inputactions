@@ -1006,7 +1006,7 @@
                     "initialStateCheck": false
                 },
                 {
-                    "name": "SpawnBin",
+                    "name": "PreviousItem",
                     "type": "Button",
                     "id": "ec7dd30b-ac47-460c-a371-3aafa4bdbbc8",
                     "expectedControlType": "",
@@ -1015,7 +1015,7 @@
                     "initialStateCheck": false
                 },
                 {
-                    "name": "SpawnBed",
+                    "name": "NextItem",
                     "type": "Button",
                     "id": "6d8009cf-7d67-45ac-a3a4-bb039ee34867",
                     "expectedControlType": "",
@@ -1028,8 +1028,8 @@
                 {
                     "name": "",
                     "id": "1f680892-6c3b-4316-93f0-a22ea04d85e2",
-                    "path": "",
-                    "interactions": "",
+                    "path": "<XRController>{RightHand}/{TriggerButton}",
+                    "interactions": "Hold",
                     "processors": "",
                     "groups": "",
                     "action": "New action1",
@@ -1040,10 +1040,10 @@
                     "name": "",
                     "id": "293bb7a3-de45-49cb-8330-b6e035b26b13",
                     "path": "<XRController>{LeftHand}/{PrimaryButton}",
-                    "interactions": "Hold",
+                    "interactions": "",
                     "processors": "",
                     "groups": "",
-                    "action": "SpawnBin",
+                    "action": "PreviousItem",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },
@@ -1051,10 +1051,10 @@
                     "name": "",
                     "id": "dad3103a-eacf-48e9-9a15-f415c5cff2be",
                     "path": "<XRController>{LeftHand}/{SecondaryButton}",
-                    "interactions": "Hold",
+                    "interactions": "",
                     "processors": "",
                     "groups": "",
-                    "action": "SpawnBed",
+                    "action": "NextItem",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

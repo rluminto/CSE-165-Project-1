@@ -1,18 +1,27 @@
 using System;
+using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
+[Serializable]
+public class SpawnableItem
+{
+    public string displayName;
+    public GameObject prefab;
+}
+
 public class SpawnManager : MonoBehaviour
 {
-    [Header("Prefabs")]
-    public GameObject binPrefab;
-    public GameObject bedPrefab;
+    [Header("Spawn Catalog")]
+    public SpawnableItem[] spawnableItems;
+    public int currentIndex;
 
     [Header("Input")]
-    public InputActionReference spawnBinAction;
-    public InputActionReference spawnBedAction;
+    public InputActionReference previousItemAction;
+    public InputActionReference nextItemAction;
+    public InputActionReference spawnCurrentAction;
 
     [Header("Spawn")]
     public Transform spawnOrigin;
@@ -27,36 +36,103 @@ public class SpawnManager : MonoBehaviour
     public float floorRayLength = 10f;
     public float surfaceOffset = 0.01f;
 
+    [Header("UI")]
+    public TMP_Text currentItemLabel;
+    public float labelShowDuration = 2f;
+    public bool logSelectionChanges = true;
+
+    private float labelHideTime;
+
     private void OnEnable()
     {
-        RegisterAction(spawnBinAction, OnSpawnBin);
-        RegisterAction(spawnBedAction, OnSpawnBed);
+        RegisterAction(previousItemAction, OnPreviousItem);
+        RegisterAction(nextItemAction, OnNextItem);
+        RegisterAction(spawnCurrentAction, OnSpawnCurrentItem);
+
+        if (currentItemLabel != null)
+        {
+            currentItemLabel.gameObject.SetActive(false);
+        }
     }
 
     private void OnDisable()
     {
-        UnregisterAction(spawnBinAction, OnSpawnBin);
-        UnregisterAction(spawnBedAction, OnSpawnBed);
+        UnregisterAction(previousItemAction, OnPreviousItem);
+        UnregisterAction(nextItemAction, OnNextItem);
+        UnregisterAction(spawnCurrentAction, OnSpawnCurrentItem);
     }
 
-    public void SpawnBin()
+    private void Start()
     {
-        SpawnObject(binPrefab);
+        ClampIndex();
+
+        if (currentItemLabel != null)
+        {
+            currentItemLabel.gameObject.SetActive(false);
+        }
     }
 
-    public void SpawnBed()
+    private void Update()
     {
-        SpawnObject(bedPrefab);
+        if (currentItemLabel != null && currentItemLabel.gameObject.activeSelf && Time.time >= labelHideTime)
+        {
+            currentItemLabel.gameObject.SetActive(false);
+        }
     }
 
-    private void OnSpawnBin(InputAction.CallbackContext context)
+    public void PreviousItem()
     {
-        SpawnBin();
+        if (!HasSpawnableItems())
+        {
+            return;
+        }
+
+        currentIndex = (currentIndex - 1 + spawnableItems.Length) % spawnableItems.Length;
+        ShowCurrentItemLabel();
     }
 
-    private void OnSpawnBed(InputAction.CallbackContext context)
+    public void NextItem()
     {
-        SpawnBed();
+        if (!HasSpawnableItems())
+        {
+            return;
+        }
+
+        currentIndex = (currentIndex + 1) % spawnableItems.Length;
+        ShowCurrentItemLabel();
+    }
+
+    public void SpawnCurrentItem()
+    {
+        if (!HasSpawnableItems())
+        {
+            Debug.LogWarning("SpawnManager: No spawnable items are assigned.");
+            return;
+        }
+
+        SpawnableItem item = spawnableItems[currentIndex];
+        if (item == null || item.prefab == null)
+        {
+            Debug.LogWarning("SpawnManager: Current spawnable item is missing a prefab.");
+            return;
+        }
+
+        SpawnObject(item.prefab);
+    }
+
+    private void OnPreviousItem(InputAction.CallbackContext context)
+    {
+        PreviousItem();
+    }
+
+    private void OnNextItem(InputAction.CallbackContext context)
+    {
+        NextItem();
+    }
+
+    private void OnSpawnCurrentItem(InputAction.CallbackContext context)
+    {
+        SpawnCurrentItem();
     }
 
     private void SpawnObject(GameObject prefab)
@@ -172,6 +248,62 @@ public class SpawnManager : MonoBehaviour
         }
 
         return Mathf.Max(0.01f, obj.transform.position.y - bounds.min.y);
+    }
+
+    private void ShowCurrentItemLabel()
+    {
+        ClampIndex();
+
+        string currentName = GetCurrentItemName();
+
+        if (currentItemLabel != null)
+        {
+            currentItemLabel.text = $"Current Item: {currentName}";
+            currentItemLabel.gameObject.SetActive(true);
+            labelHideTime = Time.time + labelShowDuration;
+        }
+
+        if (logSelectionChanges)
+        {
+            Debug.Log($"SpawnManager: Current item = {currentName}");
+        }
+    }
+
+    private string GetCurrentItemName()
+    {
+        if (!HasSpawnableItems())
+        {
+            return "None";
+        }
+
+        SpawnableItem item = spawnableItems[currentIndex];
+        if (item == null)
+        {
+            return "Missing Item";
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.displayName))
+        {
+            return item.displayName;
+        }
+
+        return item.prefab != null ? item.prefab.name : "Missing Prefab";
+    }
+
+    private bool HasSpawnableItems()
+    {
+        return spawnableItems != null && spawnableItems.Length > 0;
+    }
+
+    private void ClampIndex()
+    {
+        if (!HasSpawnableItems())
+        {
+            currentIndex = 0;
+            return;
+        }
+
+        currentIndex = Mathf.Clamp(currentIndex, 0, spawnableItems.Length - 1);
     }
 
     private static Vector3 GetFlatForward(Vector3 forward)
