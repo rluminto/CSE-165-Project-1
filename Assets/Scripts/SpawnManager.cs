@@ -10,108 +10,33 @@ public class SpawnManager : MonoBehaviour
     public GameObject binPrefab;
     public GameObject bedPrefab;
 
-    [Header("XR Spawn Input (Optional)")]
-    public bool enableXRActionInput = true;
+    [Header("Input")]
     public InputActionReference spawnBinAction;
     public InputActionReference spawnBedAction;
 
-    [Header("Spawn Origin")]
-    public Transform spawnOrigin;   // Drag Right Controller here
-    public bool useMainCameraIfMissing = true;
-
-    [Header("Spawn Settings")]
+    [Header("Spawn")]
+    public Transform spawnOrigin;
     public float spawnDistance = 1.5f;
     public float spawnUpOffset = 0.75f;
     public bool keepObjectsUpright = true;
 
     [Header("Floor Snap")]
     public bool snapToFloor = true;
-    public LayerMask floorMask;     // Optional: assign Floor layer if you make one
+    public LayerMask floorMask;
     public float floorRayStartHeight = 3f;
     public float floorRayLength = 10f;
     public float surfaceOffset = 0.01f;
-    public bool preferStaticSurfaceForFloorSnap = true;
-    public bool ignoreInteractableItemsWhenSnapping = true;
-
-    [Header("Interaction Auto Setup")]
-    public bool autoConfigureSpawnedInteractables = true;
-    public bool forceMultipleSelectionForTwoHandScale = true;
-    public bool autoAddHighlightComponent = true;
-    public bool autoAddTwoHandScaleComponent = true;
-    public bool enableGazeInteractionOnSpawned = true;
-    public bool enableGazeSelectOnSpawned = true;
-
-    [Header("Editor Test Keys")]
-    public bool enableKeyboardTesting = true;
-    public KeyCode spawnBinKey = KeyCode.Alpha1;
-    public KeyCode spawnBedKey = KeyCode.Alpha2;
-
-    private void Start()
-    {
-        if (spawnOrigin == null && useMainCameraIfMissing && Camera.main != null)
-        {
-            spawnOrigin = Camera.main.transform;
-            Debug.LogWarning("SpawnManager: spawnOrigin was not assigned, so Camera.main is being used.");
-        }
-    }
 
     private void OnEnable()
     {
-        if (!enableXRActionInput)
-        {
-            return;
-        }
-
-        if (spawnBinAction == null || spawnBedAction == null)
-        {
-            Debug.LogWarning("SpawnManager: XR spawn action references are missing. Assign both SpawnBin and SpawnBed actions.");
-        }
-
-        if (spawnBinAction != null && spawnBinAction.action != null)
-        {
-            spawnBinAction.action.performed += OnSpawnBinAction;
-            spawnBinAction.action.Enable();
-        }
-
-        if (spawnBedAction != null && spawnBedAction.action != null)
-        {
-            spawnBedAction.action.performed += OnSpawnBedAction;
-            spawnBedAction.action.Enable();
-        }
+        RegisterAction(spawnBinAction, OnSpawnBin);
+        RegisterAction(spawnBedAction, OnSpawnBed);
     }
 
     private void OnDisable()
     {
-        if (spawnBinAction != null && spawnBinAction.action != null)
-        {
-            spawnBinAction.action.performed -= OnSpawnBinAction;
-            spawnBinAction.action.Disable();
-        }
-
-        if (spawnBedAction != null && spawnBedAction.action != null)
-        {
-            spawnBedAction.action.performed -= OnSpawnBedAction;
-            spawnBedAction.action.Disable();
-        }
-    }
-
-    private void Update()
-    {
-        // Temporary editor testing
-        if (!enableKeyboardTesting) return;
-
-        if (Keyboard.current != null)
-        {
-            if (Keyboard.current.digit1Key.wasPressedThisFrame)
-            {
-                SpawnBin();
-            }
-
-            if (Keyboard.current.digit2Key.wasPressedThisFrame)
-            {
-                SpawnBed();
-            }
-        }
+        UnregisterAction(spawnBinAction, OnSpawnBin);
+        UnregisterAction(spawnBedAction, OnSpawnBed);
     }
 
     public void SpawnBin()
@@ -124,12 +49,12 @@ public class SpawnManager : MonoBehaviour
         SpawnObject(bedPrefab);
     }
 
-    private void OnSpawnBinAction(InputAction.CallbackContext context)
+    private void OnSpawnBin(InputAction.CallbackContext context)
     {
         SpawnBin();
     }
 
-    private void OnSpawnBedAction(InputAction.CallbackContext context)
+    private void OnSpawnBed(InputAction.CallbackContext context)
     {
         SpawnBed();
     }
@@ -138,112 +63,96 @@ public class SpawnManager : MonoBehaviour
     {
         if (prefab == null)
         {
-            Debug.LogError("SpawnManager: Prefab is missing.");
+            Debug.LogError("SpawnManager: Missing prefab.");
             return;
         }
 
         if (spawnOrigin == null)
         {
-            Debug.LogError("SpawnManager: No spawn origin assigned.");
+            Debug.LogError("SpawnManager: Missing spawn origin.");
             return;
         }
 
-        Vector3 forward = spawnOrigin.forward;
-        Vector3 flatForward = new Vector3(forward.x, 0f, forward.z).normalized;
+        Vector3 flatForward = GetFlatForward(spawnOrigin.forward);
+        Vector3 spawnPosition = spawnOrigin.position + flatForward * spawnDistance + Vector3.up * spawnUpOffset;
 
-        // If controller/camera is pointing almost straight up/down, fall back to world forward
-        if (flatForward.sqrMagnitude < 0.001f)
-        {
-            flatForward = Vector3.forward;
-        }
+        Quaternion spawnRotation = keepObjectsUpright
+            ? Quaternion.LookRotation(flatForward, Vector3.up)
+            : spawnOrigin.rotation;
 
-        Vector3 spawnPos = spawnOrigin.position + flatForward * spawnDistance + Vector3.up * spawnUpOffset;
+        GameObject spawnedObject = Instantiate(prefab, spawnPosition, spawnRotation);
 
-        Quaternion spawnRot;
-        if (keepObjectsUpright)
-        {
-            spawnRot = Quaternion.LookRotation(flatForward, Vector3.up);
-        }
-        else
-        {
-            spawnRot = spawnOrigin.rotation;
-        }
-
-        GameObject spawned = Instantiate(prefab, spawnPos, spawnRot);
-
-        ConfigureSpawnedInteractable(spawned);
+        ConfigureInteractable(spawnedObject);
 
         if (snapToFloor)
         {
-            SnapSpawnedObjectToFloor(spawned, spawnPos);
+            SnapToFloor(spawnedObject, spawnPosition);
         }
     }
 
-    private void SnapSpawnedObjectToFloor(GameObject obj, Vector3 approxSpawnPos)
+    private void ConfigureInteractable(GameObject obj)
     {
-        if (obj == null) return;
+        XRGrabInteractable grabInteractable = GetOrAddComponent<XRGrabInteractable>(obj);
+        grabInteractable.selectMode = InteractableSelectMode.Multiple;
+        grabInteractable.allowGazeInteraction = true;
+        grabInteractable.allowGazeSelect = true;
 
-        Vector3 rayStart = approxSpawnPos + Vector3.up * floorRayStartHeight;
-        Ray ray = new Ray(rayStart, Vector3.down);
-
-        RaycastHit[] hits;
-        if (floorMask.value == 0)
-        {
-            hits = Physics.RaycastAll(ray, floorRayLength, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
-        }
-        else
-        {
-            hits = Physics.RaycastAll(ray, floorRayLength, floorMask, QueryTriggerInteraction.Ignore);
-        }
-
-        if (hits.Length == 0) return;
-
-        Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
-
-        bool foundValidSurface = false;
-        RaycastHit bestHit = default;
-
-        for (int i = 0; i < hits.Length; i++)
-        {
-            RaycastHit candidate = hits[i];
-
-            if (candidate.collider == null)
-            {
-                continue;
-            }
-
-            if (candidate.collider.transform.IsChildOf(obj.transform))
-            {
-                continue;
-            }
-
-            if (ignoreInteractableItemsWhenSnapping && candidate.collider.CompareTag("InteractableItems"))
-            {
-                continue;
-            }
-
-            if (preferStaticSurfaceForFloorSnap && candidate.rigidbody != null && candidate.rigidbody.gameObject != obj)
-            {
-                continue;
-            }
-
-            bestHit = candidate;
-            foundValidSurface = true;
-            break;
-        }
-
-        if (!foundValidSurface) return;
-
-        float bottomOffsetFromPivot = GetBottomOffsetFromPivot(obj);
-        Vector3 pos = obj.transform.position;
-        pos.y = bestHit.point.y + bottomOffsetFromPivot + surfaceOffset;
-        obj.transform.position = pos;
+        GetOrAddComponent<XRInteractableHighlighter>(obj);
+        GetOrAddComponent<XRTwoHandScaleInteractable>(obj);
 
         Rigidbody rb = obj.GetComponent<Rigidbody>();
         if (rb != null)
         {
-            rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
+            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
+        }
+    }
+
+    private void SnapToFloor(GameObject obj, Vector3 approximatePosition)
+    {
+        Vector3 rayStart = approximatePosition + Vector3.up * floorRayStartHeight;
+        Ray ray = new Ray(rayStart, Vector3.down);
+
+        int mask = floorMask.value == 0 ? Physics.DefaultRaycastLayers : floorMask.value;
+        RaycastHit[] hits = Physics.RaycastAll(ray, floorRayLength, mask, QueryTriggerInteraction.Ignore);
+
+        if (hits.Length == 0)
+        {
+            return;
+        }
+
+        Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+
+        foreach (RaycastHit hit in hits)
+        {
+            if (hit.collider == null)
+            {
+                continue;
+            }
+
+            if (hit.collider.transform.IsChildOf(obj.transform))
+            {
+                continue;
+            }
+
+            if (hit.collider.CompareTag("InteractableItems"))
+            {
+                continue;
+            }
+
+            float bottomOffset = GetBottomOffsetFromPivot(obj);
+            Vector3 position = obj.transform.position;
+            position.y = hit.point.y + bottomOffset + surfaceOffset;
+            obj.transform.position = position;
+
+            Rigidbody rb = obj.GetComponent<Rigidbody>();
+            if (rb != null)
+            {
+                rb.linearVelocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+            }
+
+            return;
         }
     }
 
@@ -253,7 +162,7 @@ public class SpawnManager : MonoBehaviour
 
         if (colliders.Length == 0)
         {
-            return 0.5f; // fallback if no collider found
+            return 0.5f;
         }
 
         Bounds bounds = colliders[0].bounds;
@@ -262,48 +171,40 @@ public class SpawnManager : MonoBehaviour
             bounds.Encapsulate(colliders[i].bounds);
         }
 
-        // Use the actual world-space collider bottom relative to pivot.
-        // This supports colliders with non-zero centers (e.g., bed collider centered below pivot).
-        float bottomOffset = obj.transform.position.y - bounds.min.y;
-        return Mathf.Max(0.01f, bottomOffset);
+        return Mathf.Max(0.01f, obj.transform.position.y - bounds.min.y);
     }
 
-    private void ConfigureSpawnedInteractable(GameObject obj)
+    private static Vector3 GetFlatForward(Vector3 forward)
     {
-        if (!autoConfigureSpawnedInteractables || obj == null)
+        Vector3 flatForward = new Vector3(forward.x, 0f, forward.z).normalized;
+        return flatForward.sqrMagnitude < 0.001f ? Vector3.forward : flatForward;
+    }
+
+    private static void RegisterAction(InputActionReference actionReference, Action<InputAction.CallbackContext> callback)
+    {
+        if (actionReference == null || actionReference.action == null)
         {
             return;
         }
 
-        XRGrabInteractable grabInteractable = obj.GetComponent<XRGrabInteractable>();
-        if (grabInteractable == null)
+        actionReference.action.performed += callback;
+        actionReference.action.Enable();
+    }
+
+    private static void UnregisterAction(InputActionReference actionReference, Action<InputAction.CallbackContext> callback)
+    {
+        if (actionReference == null || actionReference.action == null)
         {
-            grabInteractable = obj.AddComponent<XRGrabInteractable>();
+            return;
         }
 
-        if (forceMultipleSelectionForTwoHandScale)
-        {
-            grabInteractable.selectMode = InteractableSelectMode.Multiple;
-        }
+        actionReference.action.performed -= callback;
+        actionReference.action.Disable();
+    }
 
-        grabInteractable.allowGazeInteraction = enableGazeInteractionOnSpawned;
-        grabInteractable.allowGazeSelect = enableGazeSelectOnSpawned;
-
-        if (autoAddHighlightComponent && obj.GetComponent<XRInteractableHighlighter>() == null)
-        {
-            obj.AddComponent<XRInteractableHighlighter>();
-        }
-
-        if (autoAddTwoHandScaleComponent && obj.GetComponent<XRTwoHandScaleInteractable>() == null)
-        {
-            obj.AddComponent<XRTwoHandScaleInteractable>();
-        }
-
-        Rigidbody rb = obj.GetComponent<Rigidbody>();
-        if (rb != null)
-        {
-            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
-            rb.interpolation = RigidbodyInterpolation.Interpolate;
-        }
+    private static T GetOrAddComponent<T>(GameObject obj) where T : Component
+    {
+        T component = obj.GetComponent<T>();
+        return component != null ? component : obj.AddComponent<T>();
     }
 }

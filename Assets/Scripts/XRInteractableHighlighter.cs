@@ -1,9 +1,8 @@
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
-using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 [DisallowMultipleComponent]
-[RequireComponent(typeof(XRBaseInteractable))]
+[RequireComponent(typeof(UnityEngine.XR.Interaction.Toolkit.Interactables.XRBaseInteractable))]
 public class XRInteractableHighlighter : MonoBehaviour
 {
     [Header("Highlight Colors")]
@@ -14,7 +13,7 @@ public class XRInteractableHighlighter : MonoBehaviour
     [SerializeField] private bool autoFindRenderers = true;
     [SerializeField] private Renderer[] targetRenderers;
 
-    private XRBaseInteractable interactable;
+    private UnityEngine.XR.Interaction.Toolkit.Interactables.XRBaseInteractable interactable;
     private MaterialPropertyBlock propertyBlock;
     private int hoverCount;
     private int selectCount;
@@ -24,7 +23,7 @@ public class XRInteractableHighlighter : MonoBehaviour
 
     private void Awake()
     {
-        interactable = GetComponent<XRBaseInteractable>();
+        interactable = GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRBaseInteractable>();
 
         if ((targetRenderers == null || targetRenderers.Length == 0) && autoFindRenderers)
         {
@@ -36,11 +35,6 @@ public class XRInteractableHighlighter : MonoBehaviour
 
     private void OnEnable()
     {
-        if (interactable == null)
-        {
-            return;
-        }
-
         interactable.hoverEntered.AddListener(OnHoverEntered);
         interactable.hoverExited.AddListener(OnHoverExited);
         interactable.selectEntered.AddListener(OnSelectEntered);
@@ -49,44 +43,41 @@ public class XRInteractableHighlighter : MonoBehaviour
 
     private void OnDisable()
     {
-        if (interactable != null)
-        {
-            interactable.hoverEntered.RemoveListener(OnHoverEntered);
-            interactable.hoverExited.RemoveListener(OnHoverExited);
-            interactable.selectEntered.RemoveListener(OnSelectEntered);
-            interactable.selectExited.RemoveListener(OnSelectExited);
-        }
+        interactable.hoverEntered.RemoveListener(OnHoverEntered);
+        interactable.hoverExited.RemoveListener(OnHoverExited);
+        interactable.selectEntered.RemoveListener(OnSelectEntered);
+        interactable.selectExited.RemoveListener(OnSelectExited);
 
-        ClearHighlight();
         hoverCount = 0;
         selectCount = 0;
+        ClearHighlight();
     }
 
     private void OnHoverEntered(HoverEnterEventArgs args)
     {
         hoverCount++;
-        ApplyCurrentColor();
+        RefreshHighlight();
     }
 
     private void OnHoverExited(HoverExitEventArgs args)
     {
         hoverCount = Mathf.Max(0, hoverCount - 1);
-        ApplyCurrentColor();
+        RefreshHighlight();
     }
 
     private void OnSelectEntered(SelectEnterEventArgs args)
     {
         selectCount++;
-        ApplyCurrentColor();
+        RefreshHighlight();
     }
 
     private void OnSelectExited(SelectExitEventArgs args)
     {
         selectCount = Mathf.Max(0, selectCount - 1);
-        ApplyCurrentColor();
+        RefreshHighlight();
     }
 
-    private void ApplyCurrentColor()
+    private void RefreshHighlight()
     {
         if (targetRenderers == null || targetRenderers.Length == 0)
         {
@@ -110,9 +101,8 @@ public class XRInteractableHighlighter : MonoBehaviour
 
     private void ApplyColor(Color color)
     {
-        for (int i = 0; i < targetRenderers.Length; i++)
+        foreach (Renderer renderer in targetRenderers)
         {
-            Renderer renderer = targetRenderers[i];
             if (renderer == null)
             {
                 continue;
@@ -132,15 +122,12 @@ public class XRInteractableHighlighter : MonoBehaviour
             return;
         }
 
-        for (int i = 0; i < targetRenderers.Length; i++)
+        foreach (Renderer renderer in targetRenderers)
         {
-            Renderer renderer = targetRenderers[i];
-            if (renderer == null)
+            if (renderer != null)
             {
-                continue;
+                renderer.SetPropertyBlock(null);
             }
-
-            renderer.SetPropertyBlock(null);
         }
     }
 }

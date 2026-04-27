@@ -1,147 +1,193 @@
+using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.XR.Interaction.Toolkit;
+using UnityEngine.XR;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 [DisallowMultipleComponent]
 [RequireComponent(typeof(XRGrabInteractable))]
 public class XRTwoHandScaleInteractable : MonoBehaviour
 {
-    [Header("Two-Hand Scale")]
-    [SerializeField] private bool enableTwoHandScale = true;
+    [Header("Resize Mode")]
+    [SerializeField] private bool enableResize = true;
+    [SerializeField] private Transform rightHandTransform;
+    [SerializeField] private Transform leftHandTransform;
     [SerializeField] private float minUniformScale = 0.25f;
     [SerializeField] private float maxUniformScale = 3.5f;
-    [SerializeField] private float minHandDistance = 0.02f;
+    [SerializeField] private float minControllerDistance = 0.1f;
 
     private XRGrabInteractable grabInteractable;
-    private bool isScaling;
-    private float startingHandDistance;
+    private InputDevice leftControllerDevice;
+    private bool isResizing;
+    private float startingControllerDistance;
     private Vector3 startingScale;
+
+    private static readonly List<InputDevice> devices = new List<InputDevice>();
 
     private void Awake()
     {
         grabInteractable = GetComponent<XRGrabInteractable>();
+        AutoAssignHandTransforms();
     }
 
     private void OnEnable()
     {
-        if (grabInteractable == null)
-        {
-            return;
-        }
-
-        grabInteractable.selectEntered.AddListener(OnSelectEntered);
-        grabInteractable.selectExited.AddListener(OnSelectExited);
-    }
-
-    private void OnDisable()
-    {
-        if (grabInteractable != null)
-        {
-            grabInteractable.selectEntered.RemoveListener(OnSelectEntered);
-            grabInteractable.selectExited.RemoveListener(OnSelectExited);
-        }
-
-        isScaling = false;
+        AutoAssignHandTransforms();
     }
 
     private void Update()
     {
-        if (!enableTwoHandScale || grabInteractable == null)
+        if (!enableResize)
         {
             return;
         }
 
-        if (grabInteractable.interactorsSelecting.Count < 2)
+        AutoAssignHandTransforms();
+        EnsureLeftControllerDevice();
+
+        if (!IsLeftTriggerPressed())
         {
-            isScaling = false;
+            isResizing = false;
             return;
         }
 
-        float currentHandDistance = GetCurrentHandDistance();
-        if (currentHandDistance < minHandDistance)
+        if (!TryGetControllerDistance(out float currentDistance))
         {
+            isResizing = false;
             return;
         }
 
-        if (!isScaling)
+        if (!isResizing)
         {
-            BeginScaling(currentHandDistance);
+            startingControllerDistance = currentDistance;
+            startingScale = transform.localScale;
+            isResizing = true;
             return;
         }
 
-        float scaleFactor = currentHandDistance / startingHandDistance;
+        float scaleFactor = currentDistance / startingControllerDistance;
         Vector3 newScale = startingScale * scaleFactor;
 
-        float largestComponent = Mathf.Max(newScale.x, Mathf.Max(newScale.y, newScale.z));
-        if (largestComponent > maxUniformScale)
+        float maxComponent = Mathf.Max(newScale.x, Mathf.Max(newScale.y, newScale.z));
+        if (maxComponent > maxUniformScale)
         {
-            newScale *= maxUniformScale / largestComponent;
+            newScale *= maxUniformScale / maxComponent;
         }
 
-        float smallestComponent = Mathf.Min(newScale.x, Mathf.Min(newScale.y, newScale.z));
-        if (smallestComponent < minUniformScale)
+        float minComponent = Mathf.Min(newScale.x, Mathf.Min(newScale.y, newScale.z));
+        if (minComponent < minUniformScale)
         {
-            newScale *= minUniformScale / Mathf.Max(0.0001f, smallestComponent);
+            newScale *= minUniformScale / Mathf.Max(minComponent, 0.0001f);
         }
 
         transform.localScale = newScale;
+
+        Physics.SyncTransforms();
+
+        Collider[] colliders = GetComponentsInChildren<Collider>();
+        foreach (Collider collider in colliders)
+        {
+            collider.enabled = false;
+            collider.enabled = true;
+        }
+
+        Rigidbody rb = GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            rb.ResetCenterOfMass();
+            rb.ResetInertiaTensor();
+            rb.WakeUp();
+        }
+
+
     }
 
-    private void OnSelectEntered(SelectEnterEventArgs args)
+    private void AutoAssignHandTransforms()
     {
-        if (grabInteractable != null && grabInteractable.interactorsSelecting.Count >= 2)
+        if (rightHandTransform == null)
         {
-            float currentHandDistance = GetCurrentHandDistance();
-            if (currentHandDistance >= minHandDistance)
+            GameObject rightHand = GameObject.Find("Right Controller");
+            if (rightHand != null)
             {
-                BeginScaling(currentHandDistance);
+                rightHandTransform = rightHand.transform;
+            }
+        }
+
+        if (leftHandTransform == null)
+        {
+            GameObject leftHand = GameObject.Find("Left Controller");
+            if (leftHand != null)
+            {
+                leftHandTransform = leftHand.transform;
             }
         }
     }
 
-    private void OnSelectExited(SelectExitEventArgs args)
+    private void EnsureLeftControllerDevice()
     {
-        if (grabInteractable == null)
+        if (leftControllerDevice.isValid)
         {
             return;
         }
 
-        if (grabInteractable.interactorsSelecting.Count >= 2)
+        devices.Clear();
+        InputDevices.GetDevicesWithCharacteristics(
+            InputDeviceCharacteristics.Left | InputDeviceCharacteristics.Controller,
+            devices);
+
+        if (devices.Count > 0)
         {
-            float currentHandDistance = GetCurrentHandDistance();
-            if (currentHandDistance >= minHandDistance)
+            leftControllerDevice = devices[0];
+        }
+    }
+
+    private bool IsLeftTriggerPressed()
+    {
+        return leftControllerDevice.isValid &&
+               leftControllerDevice.TryGetFeatureValue(CommonUsages.triggerButton, out bool pressed) &&
+               pressed;
+    }
+
+    private bool TryGetControllerDistance(out float distance)
+    {
+        distance = 0f;
+
+        if (rightHandTransform == null || leftHandTransform == null)
+        {
+            return false;
+        }
+
+        if (!IsHeldByRightHand())
+        {
+            return false;
+        }
+
+        distance = Vector3.Distance(rightHandTransform.position, leftHandTransform.position);
+        return distance >= minControllerDistance;
+    }
+
+    private bool IsHeldByRightHand()
+    {
+        if (grabInteractable.interactorsSelecting.Count == 0 || rightHandTransform == null)
+        {
+            return false;
+        }
+
+        foreach (var interactor in grabInteractable.interactorsSelecting)
+        {
+            if (interactor == null || interactor.transform == null)
             {
-                BeginScaling(currentHandDistance);
+                continue;
+            }
+
+            Transform interactorTransform = interactor.transform;
+            if (interactorTransform == rightHandTransform ||
+                interactorTransform.IsChildOf(rightHandTransform) ||
+                rightHandTransform.IsChildOf(interactorTransform))
+            {
+                return true;
             }
         }
-        else
-        {
-            isScaling = false;
-        }
-    }
 
-    private void BeginScaling(float currentHandDistance)
-    {
-        isScaling = true;
-        startingHandDistance = currentHandDistance;
-        startingScale = transform.localScale;
-    }
-
-    private float GetCurrentHandDistance()
-    {
-        if (grabInteractable == null || grabInteractable.interactorsSelecting.Count < 2)
-        {
-            return 0f;
-        }
-
-        Transform firstHand = grabInteractable.interactorsSelecting[0].transform;
-        Transform secondHand = grabInteractable.interactorsSelecting[1].transform;
-
-        if (firstHand == null || secondHand == null)
-        {
-            return 0f;
-        }
-
-        return Vector3.Distance(firstHand.position, secondHand.position);
+        return false;
     }
 }
